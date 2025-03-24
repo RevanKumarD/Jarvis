@@ -4,10 +4,10 @@ from pydantic import BaseModel, Field, validator
 from pydantic_ai import Agent
 from utils.model import get_model
 import logfire
+import logging
 
 # Configure logfire
 logfire.configure(send_to_logfire='if-token-present')
-logger = logfire.get_logger(__name__)
 
 #
 # ─────────────────────────────────────────────────────────────────────────
@@ -100,6 +100,9 @@ Instructions:
 - Ask a clear follow-up in `clarifying_question` like:
     - "What is the subject of your email?"
     - "Who do you want to meet?"
+- Provide adequate `response` messages keeping in mind the clarifying_question like:
+    - "Got it! I need more info to proceed."
+    - "Please provide the date and time for the meeting."
 - Return your findings as structured JSON matching this:
 
 {
@@ -114,7 +117,7 @@ Instructions:
   },
   "needs_more_info": true,
   "clarifying_question": "What is the subject of the email?",
-  "response": "I see you're trying to send an email and schedule a meeting."
+  "response": "Got it! I need more info to proceed."
 }
 """
 
@@ -128,7 +131,6 @@ information_gathering_agent = Agent(
     model=get_model(),
     system_prompt=system_prompt,
     result_type=InfoGatheringOutput,
-    temperature=0.3,
     retries=2
 )
 
@@ -155,12 +157,12 @@ async def gather_information_from_text(
     if history is None:
         history = []
 
-    logger.info("Running IGA", extra={"input": user_message, "history": history})
+    logging.info("Running IGA", extra={"input": user_message, "history": history})
 
     result = await information_gathering_agent.run(
         prompt=user_message,
         message_history=history
     )
 
-    logger.info("IGA output", extra=result.data.dict())
+    logging.info("IGA output", extra=result.data.dict())
     return result.data
