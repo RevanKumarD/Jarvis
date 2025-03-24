@@ -3,3 +3,4 @@ pydantic
 pydantic-ai
 streamlit
 python-dotenv
+logfire
