@@ -31,7 +31,7 @@ async def gather_info(state: JarvisState, writer=None) -> Dict:
         return {
             "intent": ["send_email"],  
             "entities": {"recipient": "alice@example.com"},
-            "actions": ["email"],
+            "actions": ["email agent"],
             "needs_more_info": True  # custom marker
         }
 
@@ -205,11 +205,11 @@ def build_jarvis_graph():
     graph.add_node("get_user_input", get_user_input)
 
     # Agent nodes
-    graph.add_node("email", run_email)
-    graph.add_node("calendar", run_calendar)
-    graph.add_node("contact", run_contact)
-    graph.add_node("web_search", run_web_search)
-    graph.add_node("content", run_content)
+    graph.add_node("email agent", run_email)
+    graph.add_node("calendar agent", run_calendar)
+    graph.add_node("contact agent", run_contact)
+    graph.add_node("web_search agent", run_web_search)
+    graph.add_node("content agent", run_content)
 
     # Aggregation + finish nodes
     graph.add_node("aggregate_results", aggregate_results)
@@ -225,7 +225,7 @@ def build_jarvis_graph():
         route_user_intent,
         [
             "get_user_input",   # user input loop
-            "email", "calendar", "contact", "web_search", "content",  # parallel agents
+            "email agent", "calendar agent", "contact agent", "web_search agent", "content agent",  # parallel agents
             "finish"
         ]
     )
@@ -252,8 +252,8 @@ def build_jarvis_graph():
 # Export the compiled graph
 jarvis_graph = build_jarvis_graph()
 
-# Plotting teh jarvis graph
+"""# Plotting teh jarvis graph
 png_bytes = jarvis_graph.get_graph().draw_mermaid_png()
 
 with open('jarvis_agent.png', 'wb') as f:
-    f.write(png_bytes)
+    f.write(png_bytes)"""
