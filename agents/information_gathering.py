@@ -4,7 +4,6 @@ from pydantic import BaseModel, Field, validator
 from pydantic_ai import Agent
 from utils.model import get_model
 import logfire
-import logging
 
 # Configure logfire
 logfire.configure(send_to_logfire='if-token-present')
@@ -157,12 +156,12 @@ async def gather_information_from_text(
     if history is None:
         history = []
 
-    logging.info("Running IGA", extra={"input": user_message, "history": history})
+    logfire.info("Running IGA", extra={"input": user_message, "history": history})
 
     result = await information_gathering_agent.run(
         prompt=user_message,
         message_history=history
     )
 
-    logging.info("IGA output", extra=result.data.dict())
+    logfire.info("IGA output", extra=result.data.dict())
     return result.data
