@@ -39,7 +39,7 @@ def get_calendar_service() -> Resource:
             try:
                 creds.refresh(Request())
             except Exception as e:
-                logfire.error(f"Failed to refresh token: {e}", exc_info=True)
+                logfire.error(f"Failed to refresh token: {e}")
                 creds = None
         if not creds:
             logfire.info("Initiating Calendar OAuth flow...", extra={"action": "oauth_flow"})
@@ -109,7 +109,7 @@ def create_event(
             "html_link": event.get("htmlLink")
         }
     except Exception as e:
-        logfire.error(f"Error creating event: {e}", exc_info=True)
+        logfire.error(f"Error creating event: {e}")
         return {"status": "ERROR", "detail": str(e)}
 
 def list_events_for_day(date: str) -> Dict:
@@ -120,12 +120,15 @@ def list_events_for_day(date: str) -> Dict:
     """
     service = get_calendar_service()
     import datetime
+    import pytz
     import dateutil.parser
 
     try:
-        day_parsed = dateutil.parser.parse(date)  # parse 'June 10 2025' or '2025-06-10'
-        start_of_day = day_parsed.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        end_of_day = day_parsed.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+        tz = pytz.timezone("UTC")  # Or your local timezone if needed
+
+        parsed_date = dateutil.parser.parse(date)
+        start_of_day = tz.localize(parsed_date.replace(hour=0, minute=0, second=0, microsecond=0)).isoformat()
+        end_of_day = tz.localize(parsed_date.replace(hour=23, minute=59, second=59, microsecond=0)).isoformat()
 
         events_result = service.events().list(
             calendarId="primary",
@@ -134,8 +137,8 @@ def list_events_for_day(date: str) -> Dict:
             singleEvents=True,
             orderBy="startTime"
         ).execute()
-        events = events_result.get("items", [])
 
+        events = events_result.get("items", [])
         summary_list = []
         for ev in events:
             start = ev["start"].get("dateTime", ev["start"].get("date"))
@@ -153,7 +156,7 @@ def list_events_for_day(date: str) -> Dict:
             "events": summary_list
         }
     except Exception as e:
-        logfire.error(f"Error listing events: {e}", exc_info=True)
+        logfire.error(f"Error listing events: {e}")
         return {"status": "ERROR", "detail": str(e)}
 
 def delete_event(event_id: str) -> Dict:
@@ -170,5 +173,5 @@ def delete_event(event_id: str) -> Dict:
             "event_id": event_id
         }
     except Exception as e:
-        logfire.error(f"Error deleting event: {e}", exc_info=True)
+        logfire.error(f"Error deleting event: {e}")
         return {"status": "ERROR", "detail": str(e)}

@@ -12,12 +12,15 @@ from typing import Optional, List
 from pydantic import BaseModel, Field, EmailStr
 from pydantic_ai import Agent, RunContext
 import logfire
+from datetime import datetime
 
 from utils.model import get_model
 from agents.tools.gmail_tool import label_email, delete_email, send_email_raw, search_emails
 
 # Configure logfire (optional, for remote logging)
 logfire.configure(send_to_logfire='if-token-present')
+
+today_date = datetime.now().strftime('%Y-%m-%d')
 
 # -------------------------------------------------------------------------
 #   1) MODELS
@@ -38,7 +41,7 @@ class EmailAgentResult(BaseModel):
 #   2) SYSTEM PROMPT
 # -------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """
+SYSTEM_PROMPT = f"""
 You are an Email Agent designed to perform the following tasks:
 
 1. Label an email.
@@ -51,17 +54,20 @@ You have access to the following tools to accomplish these tasks:
 - label_email(email_id: str, label: str): Applies a label to an email.
 - send_confirmation_email(sender: str, to: str, subject: str, body: str): Sends a confirmation email.
 
+Today's date is: {today_date}.
+Use this date as the current date for any date calculations or interpretations.
+
 When responding, ensure you return valid JSON that conforms to the EmailAgentResult model.
 
 JSON Response Format:
-{
+{{
     "status": "...",
     "detail": "...",
     "email_id": "...",
     "label_applied": "...",
     "final_confirmation_text": "...",
     "message_id": "..."
-}
+}}
 
 - If labeling an email, set "status" to "LABELED".
 - If sending a confirmation email, set "status" to "SENT".
@@ -82,7 +88,7 @@ email_agent = Agent(
 #   4) TOOLS
 # -------------------------------------------------------------------------
 
-@email_agent.tool
+@email_agent.tool(retries=2)
 async def search_email_tool(ctx: RunContext, query: str) -> str:
     """
     LLM tool to find email IDs matching a search query.
@@ -90,7 +96,7 @@ async def search_email_tool(ctx: RunContext, query: str) -> str:
     result = search_emails(query)
     return str(result)
 
-@email_agent.tool
+@email_agent.tool(retries=2)
 async def label_email_tool(ctx: RunContext, email_id: str, label: str) -> str:
     """
     pydantic-ai tool that integrates with the Gmail labeling function.
@@ -99,7 +105,7 @@ async def label_email_tool(ctx: RunContext, email_id: str, label: str) -> str:
     result = label_email(email_id, label)
     return str(result)
 
-@email_agent.tool
+@email_agent.tool(retries=2)
 async def send_confirmation_email(ctx: RunContext, sender: str, to: str, subject: str, body: str) -> str:
     """
     pydantic-ai tool for sending confirmation emails.
