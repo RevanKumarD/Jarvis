@@ -5,6 +5,7 @@ __pycache__/
 .env
 *.sqlite3
 credentials.json
+token.json
 */__pycache__/
 */.env
 */.venv/

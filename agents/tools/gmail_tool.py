@@ -4,10 +4,10 @@ import os
 import base64
 from email.mime.text import MIMEText
 from typing import Dict, List, Optional
-import google.auth
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
+from googleapiclient.discovery import build, Resource
+from google.auth.transport.requests import Request
 import logfire
 from dotenv import load_dotenv
 
@@ -20,42 +20,60 @@ load_dotenv(override=True)
 # Gmail API scopes (modify if needed)
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
-def get_gmail_service() -> build:
-    """
-    Authenticates with the Gmail API using OAuth 2.0.
+# Global variable to cache the Gmail service
+_gmail_service: Optional[Resource] = None
 
-    Loads credentials from credentials.json and token.json.
-    If token.json doesn't exist or is invalid, initiates the OAuth flow.
-    Saves the generated tokens to token.json for future use.
 
-    Returns:
-        googleapiclient.discovery.Resource: An authorized Gmail API service object.
+def get_gmail_service() -> Resource:
     """
-    creds = None
+    Returns a cached or newly constructed Gmail service object.
+    """
+    global _gmail_service
+
+    if _gmail_service is not None:
+        # Check if creds need refresh
+        if _gmail_service._http.credentials.expired:
+            try:
+                _gmail_service._http.credentials.refresh(Request())
+                logfire.info("Refreshed existing token.")
+                return _gmail_service
+            except Exception as e:
+                logfire.error("Failed to refresh token.")
+                # Force re-auth by setting _gmail_service to None
+                _gmail_service = None
+
+    # If we have no cached service or refresh failed, build it once:
     creds_path = os.getenv("GMAIL_CREDENTIALS_PATH", "credentials.json")
     token_path = os.getenv("GMAIL_TOKEN_PATH", "token.json")
 
-    # Load existing tokens if available
+    creds: Optional[Credentials] = None
     if os.path.exists(token_path):
+        logfire.info(f"Loading existing token from {token_path}")
         creds = Credentials.from_authorized_user_file(token_path, SCOPES)
 
-    # If no valid credentials, run OAuth flow
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            # Refresh expired tokens
-            creds.refresh(google.auth.transport.requests.Request())
-        else:
-            # Run local server authorization
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                logfire.error("Failed to refresh token, re-auth needed.")
+                creds = None
+        if not creds:
+            # Launch OAuth
             flow = InstalledAppFlow.from_client_secrets_file(creds_path, SCOPES)
             creds = flow.run_local_server(port=0)
+            logfire.info("OAuth flow completed.")
+            with open(token_path, "w") as token_file:
+                token_file.write(creds.to_json())
 
-        # Save credentials for future use
-        with open(token_path, "w") as token:
-            token.write(creds.to_json())
-
-    # Build and return the Gmail service object
-    service = build("gmail", "v1", credentials=creds)
-    return service
+    try:
+        service = build("gmail", "v1", credentials=creds)
+        logfire.info("Successfully built Gmail service.")
+        _gmail_service = service
+        return service
+    except Exception as e:
+        logfire.critical(f"Failed to build Gmail service: {e}")
+        raise RuntimeError("Could not build Gmail API client.") from e
 
 def search_emails(query: str, max_results: int = 5) -> Dict:
     """
@@ -90,7 +108,7 @@ def search_emails(query: str, max_results: int = 5) -> Dict:
                   "detail": str
                 }
     """
-    logfire.info("search_emails called", extra={"query": query, "max_results": max_results})
+    logfire.info(f'search_emails called - "query": {query}, "max_results": {max_results}')
     service = get_gmail_service()
 
     try:
@@ -108,7 +126,7 @@ def search_emails(query: str, max_results: int = 5) -> Dict:
                 "detail": f"No emails found matching query: {query}"
             }
 
-        results: List[Dict] =
+        results: List[Dict] = list()
         for m in messages:
             msg_id = m["id"]
             # Fetch message details (snippet, subject)
@@ -116,7 +134,7 @@ def search_emails(query: str, max_results: int = 5) -> Dict:
                 userId="me", id=msg_id, format="metadata"
             ).execute()
             snippet = full_msg.get("snippet", "")
-            headers = full_msg.get("payload", {}).get("headers",)
+            headers = full_msg.get("payload", {}).get("headers",)  # Corrected line
             subject = ""
             for h in headers:
                 if h.get("name", "").lower() == "subject":
@@ -136,7 +154,7 @@ def search_emails(query: str, max_results: int = 5) -> Dict:
         }
 
     except Exception as e:
-        logfire.error("Error searching emails", exc_info=True)
+        logfire.error(f"Error searching emails - {e}")
         return {
             "status": "ERROR",
             "detail": str(e)
@@ -153,7 +171,7 @@ def label_email(email_id: str, label: str) -> Dict:
     Returns:
         Dict: A dictionary containing the status of the operation.
     """
-    logfire.info("label_email called", extra={"email_id": email_id, "label": label})
+    logfire.info(f'label_email called - "email_id": {email_id}, "label": {label})')
     service = get_gmail_service()
 
     try:
@@ -184,33 +202,7 @@ def label_email(email_id: str, label: str) -> Dict:
         }
 
     except Exception as e:
-        logfire.error("Error labeling email", exc_info=True)
-        return {
-            "status": "ERROR",
-            "detail": str(e)
-        }
-
-def delete_email(email_id: str) -> Dict:
-    """
-    Deletes an email by moving it to the trash.
-
-    Args:
-        email_id (str): The ID of the email to delete.
-
-    Returns:
-        Dict: A dictionary containing the status of the operation.
-    """
-    logfire.info("delete_email called", extra={"email_id": email_id})
-    service = get_gmail_service()
-
-    try:
-        service.users().messages().delete(userId="me", id=email_id).execute()
-        return {
-            "status": "DELETED",
-            "email_id": email_id,
-        }
-    except Exception as e:
-        logfire.error("Error deleting email", exc_info=True)
+        logfire.error(f"Error labeling email {e}")
         return {
             "status": "ERROR",
             "detail": str(e)
@@ -229,7 +221,7 @@ def send_email_raw(sender: str, to: str, subject: str, body: str) -> Dict:
     Returns:
         Dict: A dictionary containing the status of the operation.
     """
-    logfire.info("send_email_raw called", extra={"sender": sender, "to": to, "subject": subject})
+    logfire.info(f"send_email_raw called - 'sender': {sender}, 'to': to, 'subject': {subject}")
     service = get_gmail_service()
 
     message = MIMEText(body)
@@ -247,7 +239,7 @@ def send_email_raw(sender: str, to: str, subject: str, body: str) -> Dict:
             "detail": "Gmail message sent successfully"
         }
     except Exception as e:
-        logfire.error("Error sending email", exc_info=True)
+        logfire.error(f"Error sending email {e}")
         return {
             "status": "ERROR",
             "detail": str(e)

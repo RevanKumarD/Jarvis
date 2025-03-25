@@ -14,7 +14,7 @@ from pydantic_ai import Agent, RunContext
 import logfire
 
 from utils.model import get_model
-from tools.gmail_tool import label_email, delete_email, send_email_raw, search_emails
+from agents.tools.gmail_tool import label_email, delete_email, send_email_raw, search_emails
 
 # Configure logfire (optional, for remote logging)
 logfire.configure(send_to_logfire='if-token-present')
@@ -47,9 +47,8 @@ You are an Email Agent designed to perform the following tasks:
 
 You have access to the following tools to accomplish these tasks:
 
-
+- search_email_tool(query: str): Searches for emails matching a query. Make sure the query contains information about the email you want to label or delete.
 - label_email(email_id: str, label: str): Applies a label to an email.
-- delete_email(email_id: str): Deletes an email.
 - send_confirmation_email(sender: str, to: str, subject: str, body: str): Sends a confirmation email.
 
 When responding, ensure you return valid JSON that conforms to the EmailAgentResult model.
@@ -65,7 +64,6 @@ JSON Response Format:
 }
 
 - If labeling an email, set "status" to "LABELED".
-- If deleting an email, set "status" to "DELETED".
 - If sending a confirmation email, set "status" to "SENT".
 """
 
@@ -99,15 +97,6 @@ async def label_email_tool(ctx: RunContext, email_id: str, label: str) -> str:
     """
     logfire.info(f"Calling label_email_tool with email_id: {email_id}, label: {label}")
     result = label_email(email_id, label)
-    return str(result)
-
-@email_agent.tool
-async def delete_email_tool(ctx: RunContext, email_id: str) -> str:
-    """
-    pydantic-ai tool that integrates with the Gmail deletion function.
-    """
-    logfire.info(f"Calling delete_email_tool with email_id: {email_id}")
-    result = delete_email(email_id)
     return str(result)
 
 @email_agent.tool

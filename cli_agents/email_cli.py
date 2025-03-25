@@ -1,134 +1,128 @@
-# tools/email_cli.py
+# tools/email_agent_cli.py
 
-import os
+"""
+This module provides a command-line interface (CLI) for interacting with the Email Agent.
+
+It allows users to send requests to the agent and view its responses in real-time,
+including tool calls and structured output. The CLI maintains a conversation history
+to provide context to the agent.
+"""
+
 import asyncio
 import sys
+import os
+from typing import List
 from rich.console import Console
-from rich.table import Table
-from rich.prompt import Prompt
+from rich.markdown import Markdown
+from rich.live import Live
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    UserPromptPart,
+    TextPart
+)
+from pydantic import ValidationError
+from dotenv import load_dotenv
 
-# Adjust path to find your agents module
+# Adjust path so we can import our agent from the parent directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agents.gmail_tool import search_emails
-from agents.email_agent import (
-    label_email_action,
-    delete_email_action,
-    send_confirmation_action
-)
+from agents.email_agent import email_agent, EmailAgentResult
+
+load_dotenv()
 
 console = Console()
 
-def print_help():
-    console.print("[bold green]Available commands:[/bold green]")
-    console.print("  [bold cyan]search <query>[/bold cyan]            → Find emails matching Gmail query syntax")
-    console.print("  [bold cyan]label <email_id> <label_name>[/bold cyan]  → Apply a label to an email")
-    console.print("  [bold cyan]delete <email_id>[/bold cyan]          → Permanently delete an email")
-    console.print("  [bold cyan]confirm <sender> <recipient> <desc>[/bold cyan]  → Send a confirmation email")
-    console.print("  [bold cyan]help[/bold cyan]                       → Show this help message")
-    console.print("  [bold cyan]quit[/bold cyan]                       → Exit the CLI")
+class EmailAgentCLI:
+    """
+    A streaming CLI that interacts with the Email Agent.
 
-async def handle_search(query: str):
-    console.print(f"[bold magenta]Searching with query:[/bold magenta] {query}")
-    result = search_emails(query)
-    if result["status"] == "FOUND":
-        messages = result["messages"]
-        if messages:
-            table = Table(title="Search Results", show_lines=True)
-            table.add_column("ID", justify="center")
-            table.add_column("Subject", justify="left")
-            table.add_column("Snippet", justify="left")
-            for msg in messages:
-                table.add_row(msg["id"], msg.get("subject", ""), msg["snippet"])
-            console.print(table)
-        else:
-            console.print("[yellow]No messages found.[/yellow]")
-    elif result["status"] == "NO_MATCHES":
-        console.print("[yellow]No matches found.[/yellow]")
-    else:
-        console.print(f"[red]Error or other status: {result}[/red]")
+    It allows the LLM to decide which tool(s) to call among:
+        - search_email_tool(query)
+        - label_email_tool(email_id, label)
+        - delete_email_tool(email_id)
+        - send_confirmation_email(sender, to, subject, body)
 
-async def handle_label(email_id: str, label_name: str):
-    console.print(f"[bold magenta]Labeling email {email_id} with '{label_name}'[/bold magenta]")
-    result = await label_email_action(email_id, label_name)
-    if result.status == "LABELED":
-        console.print(f"[green]Success! Labeled:[/green] {result.email_id} as [bold]{result.label_applied}[/bold]")
-    else:
-        console.print(f"[red]Operation failed:[/red] {result.detail or 'Unknown error'}")
+    The conversation messages are stored in `self.messages` to provide context to the agent.
+    """
 
-async def handle_delete(email_id: str):
-    console.print(f"[bold magenta]Deleting email {email_id}[/bold magenta]")
-    result = await delete_email_action(email_id)
-    if result.status == "DELETED":
-        console.print(f"[green]Success! Deleted:[/green] {result.email_id}")
-    else:
-        console.print(f"[red]Operation failed:[/red] {result.detail or 'Unknown error'}")
+    def __init__(self):
+        self.messages: List[ModelMessage] = []
 
-async def handle_confirm(sender: str, recipient: str, desc: str):
-    console.print(f"[bold magenta]Sending confirmation[/bold magenta] from [bold]{sender}[/bold] to [bold]{recipient}[/bold]")
-    res = await send_confirmation_action(sender, recipient, desc)
-    if res.status == "SENT":
-        console.print("[green]Email sent![/green]")
-        if res.final_confirmation_text:
-            console.print(f"[dim]Final content: {res.final_confirmation_text}[/dim]")
-        if res.message_id:
-            console.print(f"[dim]Message ID: {res.message_id}[/dim]")
-    else:
-        console.print(f"[red]Operation failed:[/red] {res.detail or 'Unknown error'}")
+    async def run_cli(self):
+        """
+        Starts the Email Agent CLI loop.
+        """
+        console.print("[bold blue]Email Agent CLI[/bold blue]")
+        console.print("Type 'quit' to exit.\n")
 
-async def main():
-    console.print("[bold blue]Email Agent CLI[/bold blue]")
-    print_help()
-
-    while True:
-        try:
-            user_input = Prompt.ask("\n[bold green]>[/bold green]").strip()
+        while True:
+            user_input = console.input("[bold green]> [/bold green]").strip()
             if not user_input:
                 continue
-        except (EOFError, KeyboardInterrupt):
-            console.print("\n[red]Exiting...[/red]")
-            break
+            if user_input.lower() in ["quit", "exit"]:
+                console.print("Exiting. Bye!")
+                break
 
-        if user_input.lower() in ["quit", "exit"]:
-            console.print("[red]Exiting CLI. Goodbye![/red]")
-            break
-        elif user_input.lower().startswith("help"):
-            print_help()
-            continue
-        elif user_input.lower().startswith("search "):
-            # e.g. "search from:alice@example.com subject:demo"
-            query = user_input[7:].strip()
-            await handle_search(query)
-        elif user_input.lower().startswith("label "):
-            # e.g. "label 186f0b8bdad 'High Priority'"
-            parts = user_input.split(maxsplit=2)
-            if len(parts) < 3:
-                console.print("[red]Usage: label <email_id> <label_name>[/red]")
-                continue
-            email_id = parts[1]
-            label_name = parts[2].strip().strip('"\'')
-            await handle_label(email_id, label_name)
-        elif user_input.lower().startswith("delete "):
-            # e.g. "delete 186f0b8bdad"
-            parts = user_input.split(maxsplit=1)
-            if len(parts) < 2:
-                console.print("[red]Usage: delete <email_id>[/red]")
-                continue
-            email_id = parts[1]
-            await handle_delete(email_id)
-        elif user_input.lower().startswith("confirm "):
-            # e.g. "confirm me@example.com alice@example.com 'Team Meeting tomorrow at 2pm'"
-            parts = user_input.split(maxsplit=3)
-            if len(parts) < 4:
-                console.print("[red]Usage: confirm <sender> <recipient> <desc>[/red]")
-                continue
-            sender = parts[1]
-            recipient = parts[2]
-            desc = parts[3].strip().strip('"\'')
-            await handle_confirm(sender, recipient, desc)
+            await self.handle_user_input(user_input)
+
+    async def handle_user_input(self, user_input: str):
+        """
+        Handles user input by sending it to the Email Agent and displaying the response.
+
+        Args:
+            user_input (str): The user's input.
+        """
+        # Add the user's message to the conversation history
+        self.messages.append(
+            ModelRequest(parts=[UserPromptPart(content=user_input)])
+        )
+
+        # Use run_stream for real-time streaming of the agent's reasoning
+        final_struct = None
+
+        with Live("", console=console, vertical_overflow="visible") as live:
+            async with email_agent.run_stream(
+                user_input,
+                message_history=self.messages
+            ) as result:
+                # Stream the structured output and handle partial results
+                async for message, last in result.stream_structured(debounce_by=0.1):
+                    try:
+                        # Validate partial or final output as EmailAgentResult
+                        partial_output = await result.validate_structured_result(
+                            message,
+                            allow_partial=not last  # Enable partial parsing
+                        )
+                        if partial_output:
+                            # Display partial or final response detail if available
+                            if partial_output.detail:
+                                live.update(Markdown(f"**Detail:** {partial_output.detail}"))
+                            final_struct = partial_output
+                    except ValidationError:
+                        # Ignore validation errors for tool calls and partial JSON
+                        pass
+
+        # Handle the final structured output from the agent
+        if final_struct:
+            # Append the agent's final message to the conversation history
+            self.messages.append(
+                ModelResponse(parts=[TextPart(content=final_struct.model_dump_json())])
+            )
+
+            # Display the final structured output
+            console.print("\n[bold yellow]Final Structured Output:[/bold yellow]")
+            console.print_json(final_struct.model_dump_json(indent=2))
         else:
-            console.print("[red]Unrecognized command[/red]")
-            print_help()
+            console.print("[red]No valid final output from agent.[/red]")
+
+async def main():
+    """
+    Entry point for the Email Agent CLI.
+    """
+    cli = EmailAgentCLI()
+    await cli.run_cli()
 
 if __name__ == "__main__":
     asyncio.run(main())
