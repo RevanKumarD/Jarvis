@@ -4,3 +4,8 @@ __pycache__/
 .venv/
 .env
 *.sqlite3
+credentials.json
+*/__pycache__/
+*/.env
+*/.venv/
+*/.sqlite3

@@ -49,11 +49,11 @@
 
 ## PHASE 3: Agent Development
 
-- [ ] **Information Gathering Agent**
-    - [ ] Create `agents/information_gathering.py` file.
-    - [ ] Define a Pydantic model for input validation.
-    - [ ] Implement logic to extract missing fields from user messages.
-    - [ ] Implement logic to validate structured input.
+- [x] **Information Gathering Agent**
+    - [x] Create `agents/information_gathering.py` file.
+    - [x] Define a Pydantic model for input validation.
+    - [x] Implement logic to extract missing fields from user messages.
+    - [x] Implement logic to validate structured input.
 
 - [ ] **Email Agent**
     - [ ] Create `agents/email.py` file.

@@ -1,6 +1,8 @@
-langgraph
 pydantic
 pydantic-ai
-streamlit
+langgraph
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
 python-dotenv
 logfire
